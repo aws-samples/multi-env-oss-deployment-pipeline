@@ -1,0 +1,22 @@
+name: inspec_tests
+title: AWS InSpec Profile
+maintainer: The Authors
+copyright: The Authors
+copyright_email: you@example.com
+license: Apache-2.0
+summary: An InSpec Compliance Profile For AWS
+version: 0.1.0
+inspec_version: '>= 4.6.9'
+supports:
+  - platform: aws
+
+# Input Variables we will utilize in our integration tests
+inputs:
+- name: WindowsEC2SG
+  value: WindowsEC2SG
+- name: VpcEndpointSG
+  value: VpcEndpointSG
+- name: CodePipelineRole
+  value: cassis-CodePipelineRole
+- name: CodePipelineBase
+  value: cassis-CodePipelineBase

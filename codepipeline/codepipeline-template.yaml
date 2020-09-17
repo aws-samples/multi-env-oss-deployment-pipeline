@@ -1,0 +1,574 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Provisions a CodePipeline pipeline that validates CloudFormation templates and provisions CloudFormation stacks
+
+Parameters:
+
+  Namespace:
+    Description: A prefix used to name provisioned resources
+    Type: String
+    Default: cassis
+
+  GitHubRepoName:
+    Description: GitHub repo for creating infrastructure
+    Type: String
+    Default: testRepo
+
+  GitHubBranchName:
+    Description: name of GitHub branch to watch
+    Type: String
+    Default: master
+
+  CodePipelineArtifactsS3BucketName:
+    Description: Name of the CodePipeline S3 bucket to create to store temporary build artifacts
+    Type: String
+
+  CFNTemplatesPath:
+    Description: Relative path for CloudFormation templates
+    Type: String
+    Default: templates/
+
+  StackerConfigPath:
+    Description: Relative path for Stacker config files
+    Type: String
+    Default: stacker/
+
+  TargetAccount:
+    Description: ID of AWS Account where Stacker will provision resources
+    Type: String
+
+  StackerEnvParametersFile:
+    Description: Name of the Enviornment Parameter file
+    Type: String
+    Default: stacker-prod-env.yaml
+
+Resources:
+  StackerMasterRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Namespace}-StackerMasterRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+                AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+
+# Stacker Master Role Assume Role Policies (for Cross-Account Deployments)
+  AssumeStackerExecutionRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub "${Namespace}-AssumeStackerExecutionRolePolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+            - "sts:AssumeRole"
+          Resource: !Sub "arn:aws:iam::${TargetAccount}:role/${Namespace}-StackerExecutionRole"
+      Roles:
+        - !Ref StackerMasterRole
+
+# Service Roles that AWS CodeBuild can assume for Lint, Nag, and Deployment
+  CFNNagCodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Namespace}-CodeBuildCFNNagRole"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+      Path: /
+
+  CFNLintCodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Namespace}-CodeBuildCFNLintRole"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+      Path: /
+
+  InspecServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Namespace}-InspecRole"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+      Path: /
+
+  DeploymentCodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Namespace}-CodeBuildDeployerRole"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+      Path: /
+
+# Service Role for AWS CodePipeline
+  CodePipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${Namespace}-CodePipelineRole"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          Action:
+            - 'sts:AssumeRole'
+          Effect: Allow
+          Principal:
+            Service:
+              - codepipeline.amazonaws.com
+              - codebuild.amazonaws.com
+              - cloudformation.amazonaws.com
+      Path: /
+
+# IAM Policies for CodePipeline and CodeBuild
+  CloudFormationPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${Namespace}-CloudFormationPolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+            - "cloudformation:DescribeStacks"
+            - "cloudformation:CreateChangeSet"
+            - "cloudformation:ExecuteChangeSet"
+            - "cloudformation:DescribeChangeSet"
+            - "cloudformation:GetTemplateSummary"
+            - "cloudformation:DescribeStackEvents"
+            - "iam:CreateRole"
+            - "iam:DetachRolePolicy"
+            - "iam:DeleteRole"
+            - "iam:AttachRolePolicy"
+            - "iam:GetRole"
+            - "lambda:*"
+            - "apigateway:*"
+          Resource: "*"
+      Roles:
+        - !Ref CodePipelineServiceRole
+
+# IAM Policies for CodePipeline and CodeBuild
+  CodeBuildLogsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${Namespace}-CodeBuildLogsPolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+            - 'logs:CreateLogGroup'
+            - 'logs:CreateLogStream'
+            - 'logs:PutLogEvents'
+          Resource: "*"
+      Roles:
+        - !Ref CFNNagCodeBuildServiceRole
+        - !Ref CFNLintCodeBuildServiceRole
+        - !Ref DeploymentCodeBuildServiceRole
+        - !Ref CodePipelineServiceRole
+        - !Ref InspecServiceRole
+
+  CodePipelineArtifactsS3BucketPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${Namespace}-CodePipelineArtifactsS3BucketPolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+            - 's3:List*'
+          Resource: !Sub 'arn:aws:s3:::${CodePipelineArtifactsS3Bucket}'
+      Roles:
+        - !Ref CFNNagCodeBuildServiceRole
+        - !Ref CFNLintCodeBuildServiceRole
+        - !Ref DeploymentCodeBuildServiceRole
+        - !Ref CodePipelineServiceRole
+        - !Ref InspecServiceRole
+
+  CodePipelineArtifactsS3BucketObjectsPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${Namespace}-CodePipelineArtifactsS3BucketObjectsPolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+            - 's3:Get*'
+            - 's3:Put*'
+          Resource: !Sub 'arn:aws:s3:::${CodePipelineArtifactsS3Bucket}/*'
+      Roles:
+        - !Ref CFNNagCodeBuildServiceRole
+        - !Ref CFNLintCodeBuildServiceRole
+        - !Ref DeploymentCodeBuildServiceRole
+        - !Ref CodePipelineServiceRole
+        - !Ref InspecServiceRole
+
+  CodeBuildAssumeStackerMasterRolePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${Namespace}-CodeBuildAssumeStackerMasterRolePolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+            - 'sts:AssumeRole'
+          Resource: !GetAtt StackerMasterRole.Arn
+      Roles:
+        - !Ref DeploymentCodeBuildServiceRole
+
+  CodePipelineBasePolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${Namespace}-CodePipelineBase"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+            - 'iam:PassRole'
+            - 'codepipeline:*'
+          Resource: "*"
+      Roles:
+        - !Ref CodePipelineServiceRole
+
+  CodePipelineCodeBuildAccessPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${Namespace}-CodePipelineCodeBuildAccessPolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+            - 'codebuild:StartBuild'
+            - 'codebuild:BatchGetBuilds'
+          Resource: "*"
+      Roles:
+        - !Ref CodePipelineServiceRole
+
+# IAM policy for Inspec
+  InspecCodeBuildPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub "${Namespace}-InspecCodeBuildPolicy"
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Action:
+            - 'iam:GetRole'
+            - 'iam:ListAttachedRolePolicies'
+            - 'iam:ListPolicies'
+            - 'iam:GetPolicy'
+            - 'iam:ListEntitiesForPolicy'
+            - 'iam:GetPolicyVersion'
+            - 's3:GetBucketPolicyStatus'
+            - 's3:GetBucketAcl'
+            - 's3:GetBucketLocation'
+            - 's3:GetBucketLogging'
+            - 's3:GetBucketPolicy'
+            - 's3:GetEncryptionConfiguration'
+            - 'ec2:DescribeSecurityGroups'
+          Resource: "*"
+      Roles:
+        - !Ref InspecServiceRole
+
+  CFNLintCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+        Name: !Sub ${Namespace}-cfn-lint-code-build-project
+        Description: CodeBuild Project to validate CloudFormation templates using cnf-python-lint
+        Artifacts:
+          Type: CODEPIPELINE
+        Environment:
+            Type: LINUX_CONTAINER
+            ComputeType: BUILD_GENERAL1_SMALL
+            Image: aws/codebuild/python:3.6.5
+            EnvironmentVariables:
+              - Name: CFNTemplatesPath
+                Value: !Ref CFNTemplatesPath
+        ServiceRole:
+          !GetAtt CFNNagCodeBuildServiceRole.Arn
+        Source:
+            Type: CODEPIPELINE
+            BuildSpec: |
+              version: 0.2
+              phases:
+                install:
+                  commands:
+                    - pip install --upgrade pip
+                    - env && ls -l && python --version
+                    - pip install cfn-lint
+                    - cfn-lint ${CFNTemplatesPath}*.yaml
+
+  CFNPNagCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+        Name: !Sub ${Namespace}-cfn-nag-code-build-project
+        Description: CodeBuild Project to validate CloudFormation templates using CFN-Nag
+        Artifacts:
+          Type: CODEPIPELINE
+        Environment:
+            Type: LINUX_CONTAINER
+            ComputeType: BUILD_GENERAL1_SMALL
+            # With the image below we must specify a runtime-version in the Buildspec (see below)
+            Image: aws/codebuild/amazonlinux2-x86_64-standard:1.0
+            EnvironmentVariables:
+              - Name: CFNTemplatesPath
+                Value: !Ref CFNTemplatesPath
+        ServiceRole:
+          !GetAtt CFNLintCodeBuildServiceRole.Arn
+        Source:
+            Type: CODEPIPELINE
+            BuildSpec: |
+              version: 0.2
+              phases:
+                install:
+                  runtime-versions:
+                    ruby: 2.6
+                  commands:
+                    - env && ls -l && ruby -v
+                    - gem install cfn-nag
+                    - cfn_nag_scan -v
+                    - cfn_nag_scan --input-path $CFNTemplatesPath
+
+  InspecCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+        Name: !Sub ${Namespace}-inspec-code-build-project
+        Description: CodeBuild Project to validate CloudFormation templates using Inspec integration tests
+        Artifacts:
+          Type: CODEPIPELINE
+        Environment:
+            Type: LINUX_CONTAINER
+            ComputeType: BUILD_GENERAL1_SMALL
+            Image: chef/inspec
+            EnvironmentVariables:
+              - Name: CFNTemplatesPath
+                Value: !Ref CFNTemplatesPath
+        ServiceRole:
+          !GetAtt InspecServiceRole.Arn
+        Source:
+            Type: CODEPIPELINE
+            BuildSpec: |
+              version: 0.2
+              phases:
+                install:
+                  runtime-versions:
+                    ruby: 2.6
+                  commands:
+                    - ls -l
+                    - env && ls -l && ruby -v
+                    - inspec version
+                    - inspec --chef-license=accept
+                    - inspec exec inspec_tests -t aws://us-east-1
+
+  InfraDeployCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub ${Namespace}-infra-deploy-code-build-project
+      Description: CodeBuild Project to deployment infrastructure as code
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+          Type: LINUX_CONTAINER
+          ComputeType: BUILD_GENERAL1_SMALL
+          Image: aws/codebuild/python:3.6.5
+          EnvironmentVariables:
+            - Name: CFNTemplatesPath
+              Value: !Ref CFNTemplatesPath
+            - Name: StackerConfigPath
+              Value: !Ref StackerConfigPath
+            - Name: StackerEnvParametersFile
+              Value: !Ref StackerEnvParametersFile
+      ServiceRole:
+        !GetAtt DeploymentCodeBuildServiceRole.Arn
+      Source:
+          Type: CODEPIPELINE
+          BuildSpec: !Sub '${StackerConfigPath}/buildspec.yaml'
+
+# CodePipeline Artifacts S3 Bucket
+  CodePipelineArtifactsS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref CodePipelineArtifactsS3BucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+         BlockPublicAcls: true
+         IgnorePublicAcls: true
+         BlockPublicPolicy: true
+         RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CodePipelineArtifactsS3Bucket
+      PolicyDocument:
+        Statement:
+          - Effect: Deny
+            Action:
+              - "s3:*"
+            Resource:
+             - !Sub "arn:aws:s3:::${CodePipelineArtifactsS3Bucket}/*"
+            Principal: "*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+
+# CodePipeline Deployment Pipeline
+  InfraDeploymentPipelineCodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub ${Namespace}-cicd-pipeline
+      ArtifactStore:
+        Location: !Ref CodePipelineArtifactsS3Bucket
+        Type: S3
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      Stages:
+          - Name: Source
+            Actions:
+              - Name: Source
+                ActionTypeId:
+                  Version: '1'
+                  Owner: ThirdParty
+                  Category: Source
+                  Provider: GitHub
+                Configuration:
+                  Owner: therealawsjoe
+                  Repo: !Ref GitHubRepoName
+                  PollForSourceChanges: 'true'
+                  Branch: !Ref GitHubBranchName
+                  OAuthToken: '3ba64bbd5b25e934f9768f5ecd03527126292695'
+                OutputArtifacts:
+                  - Name: SourceZip
+                RunOrder: 1
+          - Name: Validate-CloudFormation-Templates
+            Actions:
+              - Name: CFN-Lint
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Provider: CodeBuild
+                  Version: "1"
+                Configuration:
+                  ProjectName: !Ref CFNLintCodeBuildProject
+                InputArtifacts:
+                  - Name: SourceZip
+                OutputArtifacts:
+                  - Name: CfnLintZip
+                RunOrder: 2
+              - Name: CFN-Nag
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Provider: CodeBuild
+                  Version: "1"
+                Configuration:
+                  ProjectName: !Ref CFNPNagCodeBuildProject
+                InputArtifacts:
+                  - Name: SourceZip
+                OutputArtifacts:
+                  - Name: CfnNagOutputZip
+                RunOrder: 2
+          - Name: Deploy-Infrastructure
+            Actions:
+              - Name: Stacker-Infra-Deployment
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Provider: CodeBuild
+                  Version: "1"
+                Configuration:
+                  ProjectName: !Ref InfraDeployCodeBuildProject
+                InputArtifacts:
+                  - Name: SourceZip
+                OutputArtifacts:
+                  - Name: InfraDeploymentZip
+                RunOrder: 3
+          - Name: Run-Inspec-Tests
+            Actions:
+              - Name: Inspec-Tests
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Provider: CodeBuild
+                  Version: "1"
+                Configuration:
+                  ProjectName: !Ref InspecCodeBuildProject
+                InputArtifacts:
+                  - Name: SourceZip
+                OutputArtifacts:
+                  - Name: InspecZip
+                RunOrder: 4
+
+Outputs:
+
+  CFNLintCodeBuildServiceRoleArn:
+    Value: !GetAtt CFNLintCodeBuildServiceRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-CFN-Lint-CodeBuild-Role-ARN"
+
+  CFNNagCodeBuildServiceRoleArn:
+    Value: !GetAtt CFNNagCodeBuildServiceRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-CFN-Nag-CodeBuild-Role-ARN"
+
+  DeploymentCodeBuildServiceRoleArn:
+    Value: !GetAtt DeploymentCodeBuildServiceRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-CodeBuild-Service-Role-ARN"
+
+  CodePipelineServiceRoleArn:
+    Value: !GetAtt CodePipelineServiceRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-CodePipeline-Role-ARN"
+
+  S3BucketArn:
+    Value: !GetAtt CodePipelineArtifactsS3Bucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-s3-bucket-arn"
+
+  S3BucketName:
+    Value: !Ref CodePipelineArtifactsS3BucketName
+
+  PipelineUrl:
+    Value: !Sub https://console.aws.amazon.com/codepipeline/home?region=${AWS::Region}#/view/${InfraDeploymentPipelineCodePipeline}
