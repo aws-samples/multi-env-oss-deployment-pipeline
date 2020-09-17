@@ -1,0 +1,38 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  'This Template provision a CloudTrail. This Cloud Trail is encrypted using the
+   KMS key and is sent to the S3 logging bucket.
+
+Parameters:
+  KMSStackName:
+    Type: String
+    Default: cassis-kms
+
+  S3StackName:
+    Type: String
+    Default: cassis-s3
+
+  S3BucketPrefix:
+    Type: String
+    Description: Prefix to assign to audit logs
+    Default: audit
+
+  EnvironmentName:
+    Description: Environment stack is being deployed to
+    Type: String
+    Default: Dev
+
+Resources:
+  auditTrail:
+    Type: AWS::CloudTrail::Trail
+    Properties:
+      IncludeGlobalServiceEvents: true
+      IsLogging: true
+      IsMultiRegionTrail: true
+      KMSKeyId:
+        Fn::ImportValue: !Sub "${KMSStackName}-KMS-ARN"
+      S3BucketName:
+        Fn::ImportValue: !Sub "${S3StackName}-logs-bucket-name"
+      S3KeyPrefix: !Ref S3BucketPrefix
+      TrailName:
+        Fn::Sub: "${EnvironmentName}-${AWS::StackName}-audit-logs"

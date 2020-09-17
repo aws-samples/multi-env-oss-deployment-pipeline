@@ -1,0 +1,181 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  'This Template provisions an EC2 instance and a security group. The EC2 instance
+   utilizes a Windows AMI. The Template also provisions an IAM role which grants
+   the instance accsess to Session Manager.'
+
+Parameters:
+
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t2.medium
+
+  NetworkStackName:
+    Type: String
+    Default: cassis-vpc
+
+  LatestAmiId:
+    Description: EC2 AMI Id
+    Type:  'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base'
+
+  SGGroupName:
+    Description: Security Group Name
+    Type: String
+    Default: WindowsEC2SG
+
+  EnvironmentName:
+    Description: Environment name stack is being deployed to
+    Type: String
+    Default: Dev
+
+  EC2InstanceName:
+    Description: Instance name of the servers being use to manage AD
+    Type: String
+    Default: WidowsADManagementServer
+
+  SessionManagerRoleName:
+    Description: Name of the role the EC2 instance profile will use for Session Manager
+    Type: String
+    Default: SessionManagerRole
+
+  SessionManagerPolicyName:
+    Description: Name of the Policy to grant Session Manager Permissions
+    Type: String
+    Default: SessionManagerPolicy
+
+Resources:
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+      - !Ref SessionManagerRole
+
+  SessionManagerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: !Ref SessionManagerRoleName
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+
+  SessionManagerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Ref SessionManagerPolicyName
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              -  "ssm:UpdateInstanceInformation"
+              -  "ssmmessages:CreateControlChannel"
+              -  "ssmmessages:CreateDataChannel"
+              -  "ssmmessages:OpenControlChannel"
+              -  "ssmmessages:OpenDataChannel"
+              -  "s3:GetEncryptionConfiguration"
+            Resource: "*"
+      Roles:
+        - !Ref SessionManagerRole
+
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref 'InstanceType'
+      ImageId: !Ref LatestAmiId
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      Tags:
+        - Key: Name
+          Value: !Ref EC2InstanceName
+        - Key: Environment
+          Value: !Sub ${EnvironmentName}
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: "0"
+          GroupSet:
+            - Ref: "EC2WindowsSG"
+          SubnetId:
+            Fn::ImportValue: !Sub "${NetworkStackName}-CassisPrivateSubnet1"
+      UserData:
+        Fn::Base64:
+          Restart-Service AmazonSSMAgent
+
+  EC2WindowsSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Windows EC2 Security Group
+      GroupName: !Ref SGGroupName
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          CidrIp:
+            Fn::ImportValue: !Sub "${NetworkStackName}-VpcCIDR"
+          FromPort: 389
+          ToPort: 389
+        - IpProtocol: tcp
+          CidrIp:
+            Fn::ImportValue: !Sub "${NetworkStackName}-VpcCIDR"
+          FromPort: 80
+          ToPort: 80
+        - IpProtocol: tcp
+          CidrIp:
+            Fn::ImportValue: !Sub "${NetworkStackName}-VpcCIDR"
+          FromPort: 443
+          ToPort: 443
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 0
+          ToPort: 65535
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: udp
+          FromPort: 445
+          ToPort: 445
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: udp
+          FromPort: 138
+          ToPort: 138
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: udp
+          FromPort: 464
+          ToPort: 464
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: udp
+          FromPort: 389
+          ToPort: 389
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: udp
+          FromPort: 53
+          ToPort: 53
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: udp
+          FromPort: 123
+          ToPort: 123
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: udp
+          FromPort: 88
+          ToPort: 88
+          CidrIp: 0.0.0.0/0
+      VpcId:
+        Fn::ImportValue: !Sub "${NetworkStackName}-Cassis-VPC"
+
+Outputs:
+  InstanceId:
+    Description: InstanceId of the newly created EC2 instance
+    Value: !Ref 'EC2Instance'
+  AZ:
+    Description: Availability Zone of the newly created EC2 instance
+    Value: !GetAtt [EC2Instance, AvailabilityZone]
+  PublicDNS:
+    Description: Public DNSName of the newly created EC2 instance
+    Value: !GetAtt [EC2Instance, PublicDnsName]
+  PublicIP:
+    Description: Public IP address of the newly created EC2 instance
+    Value: !GetAtt [EC2Instance, PublicIp]
