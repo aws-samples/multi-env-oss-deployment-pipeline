@@ -37,9 +37,13 @@ Parameters:
     Type: String
 
   StackerEnvParametersFile:
-    Description: Name of the Enviornment Parameter file
+    Description: Name of the Env Parameter file
     Type: String
-    Default: stacker-prod-env.yaml
+    Default: stacker-dev-env.yaml
+
+  OAuthToken:
+    Description: OAuth token used to connect to GitHub Repo
+    Type: String
 
 Resources:
   StackerMasterRole:
@@ -477,7 +481,7 @@ Resources:
                   Repo: !Ref GitHubRepoName
                   PollForSourceChanges: 'true'
                   Branch: !Ref GitHubBranchName
-                  OAuthToken: '3ba64bbd5b25e934f9768f5ecd03527126292695'
+                  OAuthToken: !Ref OAuthToken
                 OutputArtifacts:
                   - Name: SourceZip
                 RunOrder: 1
