@@ -18,7 +18,7 @@ Parameters:
   PipelineStack:
     Description: Name of the deployed CodePipeline Stack
     Type: String
-    Default: cassis-pipeline
+    Default: cassis-codepipeline
 
 Resources:
   CassisKey:
