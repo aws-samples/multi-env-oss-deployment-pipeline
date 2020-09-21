@@ -25,13 +25,3 @@ describe aws_iam_policy(policy_name: input("CodePipelineBase")) do
   it { should be_attached_to_role('cassis-CodePipelineRole') }
   it { should exist }
 end
-
-describe aws_ec2_instance(name: input("WidowsADManagementServer")) do
-  it { should exist }
-end
-
-describe aws_s3_bucket( input("BucketName")) do
-  it { should exist }
-  it { should_not be_public }
-  it { should have_default_encryption_enabled }
-end
