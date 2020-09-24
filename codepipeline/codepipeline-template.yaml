@@ -45,6 +45,10 @@ Parameters:
     Description: OAuth token used to connect to GitHub Repo
     Type: String
 
+  GithubOwner:
+    Description: Github account used to connect to GitHub Repo
+    Type: String
+
 Resources:
   StackerMasterRole:
     Type: AWS::IAM::Role
@@ -477,7 +481,7 @@ Resources:
                   Category: Source
                   Provider: GitHub
                 Configuration:
-                  Owner: therealawsjoe
+                  Owner: !Ref GithubOwner
                   Repo: !Ref GitHubRepoName
                   PollForSourceChanges: 'true'
                   Branch: !Ref GitHubBranchName

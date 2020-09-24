@@ -1,7 +1,7 @@
 # KMS Template
 KeyAlias: alias/CassisKMS
 PipelineStackerRolesStack: cassis-pipeline-role
-PipelineStack: cassis-pipeline
+PipelineStack: cassis-codepipeline
 # VPC Template
 EnvironmentName: Prod
 VpcCIDR: 10.189.0.0/20
