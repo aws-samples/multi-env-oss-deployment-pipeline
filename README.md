@@ -49,6 +49,11 @@ To deploy this project follow the step by step instructions found here.
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
 ```
 
+#### Security
+```
+See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+```
+
 #### License
 ```
 This library is licensed under the MIT-0 License. See the LICENSE file.
