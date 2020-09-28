@@ -1,0 +1,159 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  This Template deloys a the NLB used to connect to MAD. This Template also
+  deploys a VPC Endpoint Service for connecting to to MAD from another AWS Account.
+
+Parameters:
+  MADStackName:
+    Type: String
+    Default: cassis-mad
+
+  NetworkStackName:
+    Type: String
+    Default: cassis-vpc
+
+  EnvironmentName:
+    Description: An environment name that is prefixed to resource names
+    Type: String
+    Default: Dev
+
+  S3StackName:
+    Type: String
+    Default: cassis-s3
+
+  NLBName:
+    Type: String
+    Default: Achorage-LDAPS-LB
+
+  NLBScheme:
+    Type: String
+    Default: internal
+
+  NLBType:
+    Type: String
+    Default: network
+
+  NLBIpAddressType:
+    Type: String
+    Default: ipv4
+
+  TargetGroupName:
+    Type: String
+    Default: CassisTargetGroup
+
+  TGHealthCheckIntervalSeconds:
+    Type: Number
+    Default: 30
+
+  TGHealthCheckProtocol:
+    Type: String
+    Default: TCP
+
+  TGHealthyThresholdCount:
+    Type: Number
+    Default: 2
+
+  TGPort:
+    Type: Number
+    Default: 636
+
+  TGProtocol:
+    Type: String
+    Default: TCP
+
+  TGType:
+    Type: String
+    Default: ip
+
+  TGUnhealthyThresholdCount:
+    Type: Number
+    Default: 2
+
+  ListenerPort:
+    Type: Number
+    Default: 636
+
+  ListenerProtocol:
+    Type: String
+    Default: TCP
+
+  ListenerDefaultActionsType:
+    Type: String
+    Default: forward
+
+Resources:
+
+  CassisNLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W52
+            reason: "Supressing requirement for logging warning for testing purposes"
+          - id: W28
+            reason: "Supressing requirement for name warning for testing purposes"
+    Properties:
+      IpAddressType: !Ref NLBIpAddressType
+      Name: !Sub ${EnvironmentName}-${NLBName}
+      Scheme: !Ref NLBScheme
+      LoadBalancerAttributes:
+      - Key: 'access_logs.s3.enabled'
+        Value: 'true'
+      - Key: 'access_logs.s3.bucket'
+        Value:
+          Fn::ImportValue: !Sub "${S3StackName}-logs-bucket-name"
+      - Key: 'access_logs.s3.prefix'
+        Value: 'load-balancer'
+      Subnets:
+        - Fn::ImportValue: !Sub "${NetworkStackName}-CassisPrivateSubnet1"
+        - Fn::ImportValue: !Sub "${NetworkStackName}-CassisPrivateSubnet2"
+      Tags:
+        - Key: Name
+          Value: !Ref NLBName
+        - Key: EnvironmentName
+          Value: !Ref EnvironmentName
+      Type: !Ref NLBType
+
+  CassisTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Ref TargetGroupName
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: !Ref TGHealthCheckIntervalSeconds
+      HealthCheckProtocol: !Ref TGHealthCheckProtocol
+      HealthyThresholdCount: !Ref TGHealthyThresholdCount
+      Port: !Ref TGPort
+      Protocol: !Ref TGProtocol
+      Targets:
+      - Id:
+          Fn::ImportValue: !Sub "${MADStackName}-PrimaryDNS"
+      - Id:
+          Fn::ImportValue: !Sub "${MADStackName}-SecondaryDNS"
+      TargetType: !Ref TGType
+      UnhealthyThresholdCount: !Ref TGUnhealthyThresholdCount
+      VpcId:
+        Fn::ImportValue: !Sub "${NetworkStackName}-Cassis-VPC"
+
+  CassisListener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    Properties:
+      DefaultActions:
+        - Type: !Ref ListenerDefaultActionsType
+          TargetGroupArn: !Ref CassisTargetGroup
+      LoadBalancerArn: !Ref CassisNLB
+      Port: !Ref ListenerPort
+      Protocol: !Ref ListenerProtocol
+
+  CassisEndPointService:
+    Type: AWS::EC2::VPCEndpointService
+    Properties:
+      AcceptanceRequired: True
+      NetworkLoadBalancerArns:
+        - !Ref CassisNLB
+
+  CassisEndPointPermissions:
+    Type: AWS::EC2::VPCEndpointServicePermissions
+    Properties:
+      AllowedPrincipals:
+        - arn:aws:iam::401343063092:user/awsjoe
+      ServiceId: !Ref CassisEndPointService

@@ -1,0 +1,142 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  This Template creates an encrypted non-public S3 bucket to store Apollo CloudTrail and
+  VPC Flow Logs. The S3 Bucket Policy is also deployed with the template.
+
+Parameters:
+
+  S3BucketName:
+    Type: String
+    Description: Unique name to assign to the S3 bucket
+    Default: demologs2020
+
+  EnvironmentName:
+    Description: An environment name that is prefixed to resource names
+    Type: String
+    Default: Dev
+
+Resources:
+
+  Bucket:
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: "Supressing requirement for logging warning for testing purposes"
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Delete
+    Properties:
+      BucketName: !Ref S3BucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      Tags:
+        - Key: EnvironmentName
+          Value: !Ref EnvironmentName
+
+  BucketPolicyElbAccessLogWrite:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref Bucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        -
+#          Sid: "AWSLogDeliveryWrite"
+          Effect: Allow
+          Principal:
+            Service: 'delivery.logs.amazonaws.com'
+          Action: 's3:PutObject'
+          Resource: !Sub '${Bucket.Arn}/*'
+          Condition:
+            StringEquals:
+              's3:x-amz-acl': 'bucket-owner-full-control'
+        -
+#          Sid: "AWSLogDeliveryAclCheck"
+          Effect: Allow
+          Principal:
+            Service: 'delivery.logs.amazonaws.com'
+          Action: 's3:GetBucketAcl'
+          Resource: !GetAtt 'Bucket.Arn'
+        -
+#          Sid: "AWSCloudTrailAclCheck"
+          Effect: Allow
+          Principal:
+            Service: "cloudtrail.amazonaws.com"
+          Action: "s3:GetBucketAcl"
+          Resource: !GetAtt 'Bucket.Arn'
+        -
+#          Sid: "AWSCloudTrailWrite"
+          Effect: Allow
+          Principal:
+            Service: "cloudtrail.amazonaws.com"
+          Action: "s3:PutObject"
+          Resource:
+            !Sub |-
+              arn:aws:s3:::${S3BucketName}/audit/*
+          Condition:
+            StringEquals:
+              s3:x-amz-acl: "bucket-owner-full-control"
+
+# Leaving this in case a req comes out that we need to use KMS
+#  Bucket:
+#    Type: AWS::S3::Bucket
+#    DeletionPolicy: Delete
+#    Properties:
+#      BucketName: !Ref S3BucketName
+#      BucketEncryption:
+#        ServerSideEncryptionConfiguration:
+#          - ServerSideEncryptionByDefault:
+#              KMSMasterKeyID:
+#                Fn::ImportValue: !Sub "${KMSStackName}-KMS-ARN"
+#              SSEAlgorithm: aws:kms
+#      VersioningConfiguration:
+#        Status: Enabled
+
+  # BucketPolicy:
+  #   Type: AWS::S3::BucketPolicy
+  #   Properties:
+  #     Bucket:
+  #       Ref: Bucket
+  #     PolicyDocument:
+  #       Version: "2012-10-17"
+  #       Statement:
+  #         -
+  #           Sid: "AWSCloudTrailAclCheck"
+  #           Effect: "Allow"
+  #           Principal:
+  #             Service: "cloudtrail.amazonaws.com"
+  #           Action: "s3:GetBucketAcl"
+  #           Resource:
+  #             !Sub |-
+  #               arn:aws:s3:::${S3BucketName}
+  #         -
+  #           Sid: "AWSCloudTrailWrite"
+  #           Effect: "Allow"
+  #           Principal:
+  #             Service: "cloudtrail.amazonaws.com"
+  #           Action: "s3:PutObject"
+  #           Resource:
+  #             !Sub |-
+  #               arn:aws:s3:::${S3BucketName}/AWSLogs/${AWS::AccountId}/*
+  #           Condition:
+  #             StringEquals:
+  #               s3:x-amz-acl: "bucket-owner-full-control"
+
+Outputs:
+  S3BucketArn:
+    Description: S3 Bucket ARN
+    Value: !GetAtt Bucket.Arn
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-logs-bucket-arn"
+
+  S3BucketName:
+    Description: S3 Bucket Name
+    Value: !Ref Bucket
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-logs-bucket-name"

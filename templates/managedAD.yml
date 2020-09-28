@@ -1,0 +1,102 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  This Template provisions AWS Managed Active Directory
+
+Parameters:
+  Edition:
+    Description: >
+      The AWS Microsoft AD edition. Valid values include Standard and
+      Enterprise. The default is Enterprise.
+    Type: String
+    Default: Standard
+
+  DomainName:
+    Description: >
+      The fully qualified name for the Microsoft Active Directory
+      in AWS, such as corp.example.com.
+    Type: String
+    Default: cassis.cloud.com
+
+  MicrosoftADShortName:
+    Description: >
+      NetBIOS name for your domain.
+    Type: String
+    Default: cassis
+
+  EnableSingleSignOn:
+    Description: >
+      Whether to enable single sign-on for a Microsoft Active
+      Directory in AWS. If enabling SSO, then "Create Alias" need to be set to true.
+    Type: String
+    Default: 'false'
+
+  CreateAlias:
+    Description: >
+      A unique alias to assign to the Microsoft Active Directory in AWS.
+      AWS Directory Service uses the alias to construct the access URL for
+      the directory, such as http://alias.awsapps.com. By default, AWS
+      CloudFormation does not create an alias. For the purposes of this demo we will
+      not be creating an alias.
+    Type: String
+    Default: 'false'
+
+  EnvironmentName:
+    Description: An environment name that is prefixed to resource names
+    Type: String
+    Default: Dev
+
+  NetworkStackName:
+    Description: >
+      Name of the Networking Stack which has of the VPC configuration
+    Type: String
+    Default: cassis-vpc
+Conditions:
+  Alias: !Equals [ !Ref CreateAlias, 'true' ]
+
+Resources:
+  MSDirectory:
+    Type: AWS::DirectoryService::MicrosoftAD
+    Properties:
+      CreateAlias: !Ref CreateAlias
+      Edition: !Ref Edition
+      EnableSso: !Ref EnableSingleSignOn
+      Name: !Ref DomainName
+      Password: "{{resolve:ssm-secure:AdminADPassword:3}}"
+      ShortName: !Ref MicrosoftADShortName
+      VpcSettings:
+        SubnetIds:
+          - Fn::ImportValue: !Sub "${NetworkStackName}-CassisPrivateSubnet1"
+          - Fn::ImportValue: !Sub "${NetworkStackName}-CassisPrivateSubnet2"
+        VpcId:
+          Fn::ImportValue: !Sub "${NetworkStackName}-Cassis-VPC"
+
+Outputs:
+  DirectoryID:
+    Description: ID of the MS Directory
+    Value: !Ref MSDirectory
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-DirectoryID"
+
+  PrimaryDNS:
+    Description: DNS IPs of the MS Directory
+    Value: !Select [ '0', !GetAtt MSDirectory.DnsIpAddresses ]
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-PrimaryDNS"
+
+  SecondaryDNS:
+    Description: DNS IPs of the MSDirectory
+    Value: !Select [ '1', !GetAtt MSDirectory.DnsIpAddresses ]
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-SecondaryDNS"
+
+  DirectoryAlias:
+    Description: URL for the alias
+    Condition: Alias
+    Value: !GetAtt MSDirectory.Alias
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-DirectoryAlias"
