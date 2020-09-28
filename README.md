@@ -1,6 +1,6 @@
 ### Multi-Environment CD Pipelines with AWS CodePipeline and OS Tools
 
-In this Project, We will show how to deploy AWS infrastructure to multiple AWS accounts using open source tools and following best practices. We will explain a clear, simple, and repeatable deployment pipeline that can be used throughout multiple environments. The project we will create in this post will address a situation in which the customer needs to deploy an application to AWS into development, QA, and production environments. In addition in explaining how to configure the deployment pipeline, we will also cover how to arrange the AWS CloudFormation (https://aws.amazon.com/cloudformation/) templates by function so that they can be deployed as a cohesive application stack.
+In this post, we will show how to deploy AWS infrastructure to multiple AWS accounts using open source tools and following best practices. We will explain a clear, simple, and repeatable deployment pipeline that can be used throughout multiple environments. The project we will create in this post will address a situation in which the customer needs to deploy an application to AWS into development, QA, and production environments. In addition in explaining how to configure the deployment pipeline, we will also cover how to arrange the AWS CloudFormation (https://aws.amazon.com/cloudformation/) templates by function so that they can be deployed as a cohesive application stack.
 
 
 
@@ -13,7 +13,7 @@ In this post, we will demonstrate how to reduce complexity and increase agility 
 
 ### Tech/framework used
 ```
-The services that will be deployed with this project include:
+The services that will be deployed with this post include:
   - AWS Managed Microsoft AD
   - EC2
   - S3
@@ -24,13 +24,13 @@ The services that will be deployed with this project include:
 ```
 ### Features
 ```
-This project contains the following directory structure:
+This post contains the following directory structure:
 - codepipeline - where the of the CodePipeline configuration lives
 - inspec_tests - where the InSpec configuration and tests live
 - stacker - where the Stacker configuration lives
 - templates - where all of the CloudFormation Templates are located
 
-The project contains the following CloudFormation Templates:
+The post contains the following CloudFormation Templates:
 - cloudtrail.yaml - creates the CloudTrail logs and send sends them to S3 Bucket
 - ec2-instance-template.yaml - contains EC2 Instance, Instance Profile, and Security Group
 - endpoints.yaml - contains the NLB, Security Group, and VPC Endpoint Service
