@@ -1,21 +1,7 @@
-# KMS Template
-KeyAlias: alias/CassisKMS
-PipelineStackerRolesStack: cassis-pipeline-role
-PipelineStack: cassis-codepipeline
 # VPC Template
-EnvironmentName: Dev
+EnvironmentName: testing
 VpcCIDR: 10.189.0.0/20
 PrivateSubnet1CIDR: 10.189.0.0/22
 PrivateSubnet2CIDR: 10.189.4.0/22
 # S3 Template
-BucketName: devdemologs2020
-# EC2 Template
-NetworkStackName: cassis-vpc
-InstanceType: t2.medium
-EC2InstanceName: WidowsADManagementServer
-# MAD Stack
-Edition: Standard
-DomainName: cassis.cloud.com
-MicrosoftADShortName: cassis
-EnableSingleSignOn: 'false'
-CreateAlias: 'false'
+BucketName: testing

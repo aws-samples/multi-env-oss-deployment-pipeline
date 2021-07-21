@@ -1,8 +1,9 @@
 [profile stacker_master]
-role_arn = arn:aws:iam::1234567890:role/cassis-StackerMasterRole
+role_arn = arn:aws:iam::262464509369:role/cassis-StackerMasterRole
 credential_source = EcsContainer
 role_session_name = stacker_master_role_session
 
 [profile stacker_execution]
-role_arn = arn:aws:iam::1234567890:role/cassis-StackerExecutionRole
+role_arn = arn:aws:iam::262464509369:role/cassis-StackerExecutionRole
 source_profile = stacker_master
+role_session_name = stacker_master_role_session
