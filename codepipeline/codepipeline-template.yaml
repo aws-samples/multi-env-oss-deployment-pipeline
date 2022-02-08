@@ -16,7 +16,7 @@ Parameters:
   GitHubBranchName:
     Description: name of GitHub branch to watch
     Type: String
-    Default: master
+    Default: main
 
   CodePipelineArtifactsS3BucketName:
     Description: Name of the CodePipeline S3 bucket to create to store temporary build artifacts
